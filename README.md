@@ -1,5 +1,5 @@
 # nes-lter-notebooks
-Jupyter notebooks related to NES-LTER
+Jupyter notebooks related to [the NES-LTER data system](https://github.com/WHOIGit/nes-lter-ims).
 
 As of 2019-01-03 there are problems with rendering notebooks in GitHub, and apparently developers at GitHub are working on the issue.
 
