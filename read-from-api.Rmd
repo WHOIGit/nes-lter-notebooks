@@ -1,0 +1,83 @@
+---
+title: "NES-LTER Utility Functions: Compiling Cruise Data from WHOI REST API"
+author: "Jaxine Wolfe"
+date: "13 December 2019"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Compile Cruise Data from REST API
+
+**Description:** read_from_api compiles CTD, nutrient, or chlorophyll data from the [WHOI REST API](https://github.com/WHOIGit/nes-lter-ims/wiki/Using-REST-API) for the given cruises. 
+
+*Types of data this function can acquire:*
+  • metadata: CTD metadata provides a list of casts for a given cruise along with metadata about each cast (e.g., time, lat/lon, nearest station)
+  • summary: CTD bottle summary data provides a concise summary of when and where each bottle was fired.
+  • bottles: CTD bottle data provides a list of niskins along with data from the CTD as it has been provided by the SeaBird CTD processing software.
+  • nutrient: Nutrient data provided per cruise.
+  • chl: Chlorophyll data provided per cruise.
+
+**Arguments:** 
+    type         the type of data to fetch (options: "metadata", "summary", "nutrient", "chl", "bottles")
+    cruises      a vector of cruises for which the data will be compiled (single or multiple cruises accepted)
+
+```{r}
+
+read_from_api <- function(type, cruises) {
+  # expand the cruises into a dataframe (avoids nested for loops)
+  z <- expand.grid(cruises)
+  
+  # read in data based on the specified source
+  if (type == "metadata") {
+    urls <- paste0("https://nes-lter-data.whoi.edu/api/ctd/", z$Var1, "/metadata.csv")
+    urls <- unlist(urls)
+  }
+  if (type == "summary") {
+    urls <- paste0("https://nes-lter-data.whoi.edu/api/ctd/", z$Var1, "/bottle_summary.csv")
+    urls <- unlist(urls)
+  }
+  if (type == "nutrient") {
+    urls <- paste0("https://nes-lter-data.whoi.edu/api/nut/", z$Var1, ".csv")
+    urls <- unlist(urls)
+  }
+  if (type == "chl") {
+    urls <- paste0("https://nes-lter-data.whoi.edu/api/chl/", z$Var1, ".csv")
+    urls <- unlist(urls)
+  }
+  if (type == "bottles") {
+    urls <- paste0("https://nes-lter-data.whoi.edu/api/ctd/", z$Var1, "/bottles.csv")
+    urls <- unlist(urls)
+  }
+
+  ## Cruise Compilation ##
+  # case: more than one cruise given
+  if (length(cruises) > 1) {
+  # begin compilation  
+  prev_cruise <- read_csv(urls[1])
+  
+  # loop through urls to compile cruise data into one file
+  for (k in 2:length(urls)){
+    # read in data per cruise
+    next_cruise <- read_csv(urls[k])
+    
+    # bind the next cruise to the compiled cruise dataset
+    all <- plyr::rbind.fill(prev_cruise, next_cruise)
+    
+    # if statment to reset the previous cruises until all cruises are read in
+    if(k < length(urls)) {
+      prev_cruise <- all
+    }
+  }
+  return(all)
+
+  # case: only one cruise is given
+  } else {
+   all <- read_csv(urls)
+   return(all)
+  }
+}
+
+```
