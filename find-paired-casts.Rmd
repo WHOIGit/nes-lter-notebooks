@@ -1,0 +1,160 @@
+---
+title: "NES-LTER Utility Functions: Finding Paired Casts"
+author: "Jaxine Wolfe"
+date: "13 December 2019"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Compile Cruise Data from REST API
+
+**Description:** read_from_api compiles CTD, nutrient, or chlorophyll data from the [WHOI REST API](https://github.com/WHOIGit/nes-lter-ims/wiki/Using-REST-API) for the given cruises. NOTE: this function is required to use the find_paired_casts function.
+
+**Arguments:** 
+    type         specify the type of data to fetch (options: "metadata", "summary", "nutrient", "chl", "bottles")
+    cruises      a vector of cruises for which the data will be compiled (single or multiple cruises accepted)
+
+```{r}
+
+read_from_api <- function(type, cruises) {
+  # expand the cruises into a dataframe (avoids nested for loops)
+  z <- expand.grid(cruises)
+  
+  # read in data based on the specified source
+  if (type == "metadata") {
+    urls <- paste0("https://nes-lter-data.whoi.edu/api/ctd/", z$Var1, "/metadata.csv")
+    urls <- unlist(urls)
+  }
+  if (type == "summary") {
+    urls <- paste0("https://nes-lter-data.whoi.edu/api/ctd/", z$Var1, "/bottle_summary.csv")
+    urls <- unlist(urls)
+  }
+  if (type == "nutrient") {
+    urls <- paste0("https://nes-lter-data.whoi.edu/api/nut/", z$Var1, ".csv")
+    urls <- unlist(urls)
+  }
+  if (type == "chl") {
+    urls <- paste0("https://nes-lter-data.whoi.edu/api/chl/", z$Var1, ".csv")
+    urls <- unlist(urls)
+  }
+  if (type == "bottles") {
+    urls <- paste0("https://nes-lter-data.whoi.edu/api/ctd/", z$Var1, "/bottles.csv")
+    urls <- unlist(urls)
+  }
+
+  ## Cruise Compilation ##
+  # case: more than one cruise given
+  if (length(cruises) > 1) {
+  # begin compilation  
+  prev_cruise <- read_csv(urls[1])
+  
+  # loop through urls to compile cruise data into one file
+  for (k in 2:length(urls)){
+    # read in data per cruise
+    next_cruise <- read_csv(urls[k])
+    
+    # bind the next cruise to the compiled cruise dataset
+    all <- plyr::rbind.fill(prev_cruise, next_cruise)
+    
+    # if statment to reset the previous cruises until all cruises are read in
+    if(k < length(urls)) {
+      prev_cruise <- all
+    }
+  }
+  return(all)
+
+  # case: only one cruise is given
+  } else {
+   all <- read_csv(urls)
+   return(all)
+  }
+}
+
+```
+
+## Find Paired Casts
+
+**Description:** find_paired_casts returns the provided data frame with an added field that indicates an associated paired cast if one exists. 
+
+**Required:** 
+  • tidyverse package
+  • read_from_api function to access CTD data
+
+**Arguments:** 
+    df           a data frame (must contain columns cruise, cast, and date)
+    min.time     the window of minimum time difference (in mins) within paired casts should be found
+
+```{r}
+
+find_paired_casts <- function(df, min.time) {
+  # extract cruises from data
+  cruiselist <- unique(df$cruise)
+  # read in ctd data
+  ctd_metadata <- read_from_api(type = "metadata", cruises = cruiselist)
+  ctd_summary <- read_from_api(type = "summary", cruises = cruiselist)
+  
+  # define column to display paired cast
+  df$paired_cast <- NA_character_
+  
+  for (j in 1:nrow(df)) {
+    # store values for current row
+    df_cruise <- df$cruise[j]
+    df_cast <- df$cast[j]
+    
+    # isolate cast metadata and bottle summary
+    cast_metadata <- ctd_metadata %>% filter(cruise == df_cruise & cast == df_cast)
+    cast_summary <- ctd_summary %>% filter(cruise == df_cruise & cast == df_cast)
+    
+    # define the min and max time for the cast 
+    df_date_max <- max(cast_summary$date)
+    df_date_min <- min(cast_summary$date)
+    
+    # find the cast before from the bottle summary
+    cast_before <- ctd_summary %>% 
+      filter(cruise == df_cruise & cast == (df_cast-1))
+    # find the cast after from the ctd metadata
+    cast_after <- ctd_metadata %>% 
+      filter(cruise == df_cruise & cast == (df_cast+1))
+    
+    # deterine the time difference
+    time_before <- min(abs(as.numeric(difftime(df_date_min, cast_before$date, units = "mins"))),
+                       na.rm = TRUE)
+    time_after <- min(abs(as.numeric(difftime(df_date_max, cast_after$date, units = "mins"))),
+                      na.rm = TRUE)
+    
+    # determine paired casts if they exist
+    if (time_after > min.time & time_before > min.time) {
+      j <- j + 1
+      next
+    }
+    if (time_before < min.time) {
+      # isolate cast metadata to extract station
+      before_metadata <- ctd_metadata %>% filter(cruise == df_cruise & cast == (df_cast-1))
+      if (isFALSE(cast_metadata$nearest_station == before_metadata$nearest_station)) {
+        print(paste0("paired cast found for cruise ", df_cruise, 
+                     " and cast ", df_cast, ", but nearest station did not match"))
+        j <- j + 1
+        next
+      } else {
+        df$paired_cast[j] <- df_cast - 1
+      }
+    }
+    if (time_after < min.time) {
+      if (isFALSE(cast_metadata$nearest_station == cast_after$nearest_station)) {
+        print(paste0("paired cast found for cruise ", df_cruise, 
+                     " and cast ", df_cast, ", but nearest station did not match"))
+        j <- j + 1
+        next
+      } else {
+        df$paired_cast[j] <- df_cast + 1
+      }
+    }
+  }
+  return(df)
+}
+
+```
+

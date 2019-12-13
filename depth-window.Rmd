@@ -1,0 +1,24 @@
+---
+title: 'NES-LTER Utility Functions: Depth Window'
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Determining Depth Window
+
+**Description:** depth_window determines the maximum acceptable depth difference (y) given depth (x). For the NES-LTER project, this is used for matching niskin bottles by depth for different methods of sampling.
+
+**Arguments:** 
+    x       a given depth
+
+```{r}
+
+depth_window <- function(x) {
+  # Define the relationship between the depth and the depth difference
+  y <- (2/29)*x + 2
+  return(y)
+}
+```
